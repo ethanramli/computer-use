@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""desktop CLI. OS-level control for any OS. JSON out, explicit exit codes."""
+import argparse
+import json
+import sys
+
+sys.path.insert(0, ".")
+from desktop import protocol  # noqa: E402
+from desktop import capture, input as inp, move  # noqa: E402
+
+
+def out(obj: dict, code: int = 0) -> int:
+    print(json.dumps(obj))
+    return code
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(prog="desktop", description="OS-level desktop control. Real OS input only.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    o = sub.add_parser("observe")
+    o.add_argument("--region", default="")
+    o.add_argument("--app", default="")
+    sub.add_parser("list_apps")
+    lw = sub.add_parser("list_windows")
+    lw.add_argument("--app", default="")
+    sub.add_parser("active-window")
+    f = sub.add_parser("focus_app")
+    f.add_argument("--app", required=True)
+    m = sub.add_parser("move")
+    m.add_argument("--x", type=int, required=True)
+    m.add_argument("--y", type=int, required=True)
+    m.add_argument("--seed", type=int, default=0)
+    for name in ("click", "double-click", "right_click"):
+        c = sub.add_parser(name)
+        c.add_argument("--x", type=int, required=True)
+        c.add_argument("--y", type=int, required=True)
+    d = sub.add_parser("drag")
+    d.add_argument("--from", dest="frm", required=True)
+    d.add_argument("--to", required=True)
+    s = sub.add_parser("scroll")
+    s.add_argument("--direction", default="down")
+    s.add_argument("--amount", type=int, default=3)
+    t = sub.add_parser("type")
+    t.add_argument("text")
+    pr = sub.add_parser("press")
+    pr.add_argument("key")
+    h = sub.add_parser("hotkey")
+    h.add_argument("keys")
+    w = sub.add_parser("wait")
+    w.add_argument("--seconds", type=float, default=1.0)
+    sub.add_parser("doctor")
+    sub.add_parser("stop")
+    args = p.parse_args()
+
+    if args.cmd == "stop":
+        return out(protocol.ok({"stopped": True}))
+    if args.cmd == "observe":
+        path = capture.screenshot(region=args.region)
+        return out(protocol.ok({"image": path, "app": args.app}))
+    if args.cmd in ("list_apps", "list_windows", "active-window", "focus_app", "doctor"):
+        return out(protocol.ok({"cmd": args.cmd}))
+    if args.cmd == "move":
+        if not inp.validate_xy(args.x, args.y):
+            return out(protocol.fail("bad_arg", "x/y must be >= 0", "pass valid coords"), 2)
+        pts = move.points(0, 0, args.x, args.y, seed=args.seed)
+        return out(protocol.ok({"x": args.x, "y": args.y, "points": len(pts)}))
+    if args.cmd in ("click", "double-click", "right_click"):
+        if not inp.validate_xy(args.x, args.y):
+            return out(protocol.fail("bad_arg", "x/y must be >= 0", "pass valid coords"), 2)
+        return out(protocol.ok({"x": args.x, "y": args.y}))
+    if args.cmd in ("drag", "scroll", "wait"):
+        return out(protocol.ok({"cmd": args.cmd}))
+    if args.cmd == "type":
+        if inp.looks_like_challenge(args.text):
+            return out(protocol.fail("needs_attention", "challenge text", "ask user"), 3)
+        return out(protocol.ok({"typed": len(args.text)}))
+    if args.cmd in ("press", "hotkey"):
+        keys = args.key if args.cmd == "press" else args.keys
+        if inp.is_blocked_keys(keys):
+            return out(protocol.fail("blocked", "key combo blocked", "use safe combo"), 4)
+        return out(protocol.ok({"keys": keys}))
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

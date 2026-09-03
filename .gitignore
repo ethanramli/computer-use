@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+/tmp/desktop-current.jpg
+.DS_Store
