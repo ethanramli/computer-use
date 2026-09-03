@@ -48,7 +48,8 @@ The controller is local and model-agnostic. It works offline. It controls browse
     |-- part-1.md
     |-- part-2.md
     |-- part-3.md
-    `-- part-4.md
+    |-- part-4.md
+    `-- part-5.md
 `-- goal/
     |-- part-1.md
     `-- part-2.md
@@ -59,7 +60,7 @@ The controller is local and model-agnostic. It works offline. It controls browse
 - `protocol/` — CLI commands, JSON results, exit codes.
 - `safety/` — validation, stop control, confirmation gates, logging.
 - `architecture/` — controller layout, platform adapters, skills and tests.
-- `research/` — vendor-neutral findings with sources. Part 1 fast stack, part 2 human movement, part 3 global install, part 4 constraints log.
+- `research/` — vendor-neutral findings with sources. Part 5 ports the distorted-Bezier mouse model (MIT).
 - `goal/` — definite v0.1 target. Part 1 base goal, part 2 whole-computer scope. Challenge UI stops with `needs_attention`. No bypass.
 
 ## Project status

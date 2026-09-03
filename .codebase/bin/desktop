@@ -64,7 +64,8 @@ def main() -> int:
         if not inp.validate_xy(args.x, args.y):
             return out(protocol.fail("bad_arg", "x/y must be >= 0", "pass valid coords"), 2)
         pts = move.points(0, 0, args.x, args.y, seed=args.seed)
-        return out(protocol.ok({"x": args.x, "y": args.y, "points": len(pts)}))
+        dur = move.duration(0, 0, args.x, args.y)
+        return out(protocol.ok({"x": args.x, "y": args.y, "points": len(pts), "secs": round(dur, 3)}))
     if args.cmd in ("click", "double-click", "right_click"):
         if not inp.validate_xy(args.x, args.y):
             return out(protocol.fail("bad_arg", "x/y must be >= 0", "pass valid coords"), 2)
