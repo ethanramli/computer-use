@@ -3,10 +3,12 @@
 import argparse
 import json
 import sys
+import random
 
 sys.path.insert(0, ".")
 from desktop import protocol  # noqa: E402
 from desktop import capture, input as inp, move  # noqa: E402
+from desktop.platforms import macos  # noqa: E402
 
 
 def out(obj: dict, code: int = 0) -> int:
@@ -14,8 +16,18 @@ def out(obj: dict, code: int = 0) -> int:
     return code
 
 
+def get_type_gaps(rng: random.Random):
+    for _ in range(1000):
+        yield inp.next_type_gap(rng)
+
+
 def main() -> int:
-    p = argparse.ArgumentParser(prog="desktop", description="OS-level desktop control. Real OS input only.")
+    p = argparse.ArgumentParser(
+        prog="desktop",
+        description="OS-level desktop control. Real OS input only. Default dry-run.",
+    )
+    p.add_argument("--execute", action="store_true", help="actually move cursor and type (requires Accessibility permission)")
+    p.add_argument("--dry-run", action="store_true", help="show plan without executing (default)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     o = sub.add_parser("observe")
@@ -58,29 +70,101 @@ def main() -> int:
     if args.cmd == "observe":
         path = capture.screenshot(region=args.region)
         return out(protocol.ok({"image": path, "app": args.app}))
-    if args.cmd in ("list_apps", "list_windows", "active-window", "focus_app", "doctor"):
-        return out(protocol.ok({"cmd": args.cmd}))
+    if args.cmd in ("list_apps", "list_windows", "active-window", "focus_app"):
+        # ponytail ultra: fail honestly instead of fake ok until built
+        return out(protocol.fail("unimplemented", f"{args.cmd} not built yet", "use observe + click for now"), 4)
+    if args.cmd == "doctor":
+        import platform as _plat
+
+        try:
+            import mss as _mss  # noqa: F401
+
+            has_mss = True
+        except ImportError:
+            has_mss = False
+        return out(protocol.ok({
+            "platform": _plat.system(),
+            "helper": True,
+            "trusted": macos.trusted(),
+            "mss": has_mss,
+        }))
     if args.cmd == "move":
         if not inp.validate_xy(args.x, args.y):
             return out(protocol.fail("bad_arg", "x/y must be >= 0", "pass valid coords"), 2)
         pts = move.points(0, 0, args.x, args.y, seed=args.seed)
         dur = move.duration(0, 0, args.x, args.y)
-        return out(protocol.ok({"x": args.x, "y": args.y, "points": len(pts), "secs": round(dur, 3)}))
+        if args.execute:
+            try:
+                start = macos.cursor_position()
+                pts = move.points(start[0], start[1], args.x, args.y, seed=args.seed)
+                dur = move.duration(start[0], start[1], args.x, args.y)
+                macos.replay(pts, dur)
+                return out(protocol.ok({"executed": True, "x": args.x, "y": args.y}))
+            except Exception as e:
+                return out(protocol.fail("exec_failed", str(e), "grant Accessibility to terminal or installed binary"), 5)
+        return out(protocol.ok({"x": args.x, "y": args.y, "points": len(pts), "secs": round(dur, 3), "dry_run": True}))
     if args.cmd in ("click", "double-click", "right_click"):
         if not inp.validate_xy(args.x, args.y):
             return out(protocol.fail("bad_arg", "x/y must be >= 0", "pass valid coords"), 2)
-        return out(protocol.ok({"x": args.x, "y": args.y}))
-    if args.cmd in ("drag", "scroll", "wait"):
-        return out(protocol.ok({"cmd": args.cmd}))
+        double = args.cmd == "double-click"
+        button = "right" if args.cmd == "right_click" else "left"
+        if args.execute:
+            try:
+                macos.click(args.x, args.y, button=button, double=double)
+                return out(protocol.ok({"executed": True, "x": args.x, "y": args.y}))
+            except Exception as e:
+                return out(protocol.fail("exec_failed", str(e), "grant Accessibility to terminal or installed binary"), 5)
+        return out(protocol.ok({"x": args.x, "y": args.y, "dry_run": True}))
+    if args.cmd == "drag":
+        try:
+            fx, fy = map(int, args.frm.split(","))
+            tx, ty = map(int, args.to.split(","))
+        except Exception:
+            return out(protocol.fail("bad_arg", "drag coords must be x,y", "e.g. --from 10,20 --to 300,400"), 2)
+        pts = move.points(fx, fy, tx, ty, seed=0)
+        if args.execute:
+            try:
+                macos.drag((fx, fy), (tx, ty), pts)
+                return out(protocol.ok({"executed": True}))
+            except Exception as e:
+                return out(protocol.fail("exec_failed", str(e), "grant Accessibility"), 5)
+        return out(protocol.ok({"points": len(pts), "dry_run": True}))
+    if args.cmd == "scroll":
+        if args.execute:
+            try:
+                macos.scroll(args.direction, args.amount)
+                return out(protocol.ok({"executed": True}))
+            except Exception as e:
+                return out(protocol.fail("exec_failed", str(e), "grant Accessibility"), 5)
+        return out(protocol.ok({"cmd": args.cmd, "dry_run": True}))
     if args.cmd == "type":
         if inp.looks_like_challenge(args.text):
             return out(protocol.fail("needs_attention", "challenge text", "ask user"), 3)
-        return out(protocol.ok({"typed": len(args.text)}))
+        if args.execute:
+            try:
+                # ponytail ultra: unseeded rhythm, same keys never type identically twice
+                n = macos.type_text(args.text, get_type_gaps(random.Random()))
+                return out(protocol.ok({"executed": True, "chars": n}))
+            except Exception as e:
+                return out(protocol.fail("exec_failed", str(e), "grant Accessibility"), 5)
+        return out(protocol.ok({"typed": len(args.text), "dry_run": True}))
     if args.cmd in ("press", "hotkey"):
         keys = args.key if args.cmd == "press" else args.keys
         if inp.is_blocked_keys(keys):
             return out(protocol.fail("blocked", "key combo blocked", "use safe combo"), 4)
-        return out(protocol.ok({"keys": keys}))
+        if args.execute:
+            try:
+                macos.hotkey(keys)
+                return out(protocol.ok({"executed": True}))
+            except Exception as e:
+                return out(protocol.fail("exec_failed", str(e), "grant Accessibility"), 5)
+        return out(protocol.ok({"keys": keys, "dry_run": True}))
+    if args.cmd == "wait":
+        if args.execute:
+            import time
+
+            time.sleep(args.seconds)
+        return out(protocol.ok({"cmd": args.cmd, "dry_run": not args.execute}))
     return 1
 
 

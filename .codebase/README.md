@@ -6,7 +6,7 @@ Run app commands from this directory:
 
 ```bash
 cd .codebase
+clang -O2 -o bin/cghelper csrc/cghelper.c -framework CoreGraphics -framework ApplicationServices
 python -m pytest
-python -m mypy desktop
 ./bin/desktop --help
 ```

@@ -23,6 +23,8 @@ The controller is local and model-agnostic. It works offline. It controls browse
   README.md
   pyproject.toml
   bin/desktop
+  bin/cghelper
+  csrc/cghelper.c
   desktop/
     protocol.py
     state.py
@@ -34,16 +36,19 @@ The controller is local and model-agnostic. It works offline. It controls browse
       windows.py
       linux.py
   tests/test_protocol.py
+  tests/test_execute.py
 .wiki/
 |-- wiki.md
 |-- protocol/
 |   |-- part-1.md
-|   `-- part-2.md
+|   |-- part-2.md
+|   `-- part-3.md
 |-- safety/
 |   `-- part-1.md
 |-- architecture/
 |   |-- part-1.md
-|   `-- part-2.md
+|   |-- part-2.md
+|   `-- part-3.md
 `-- research/
     |-- part-1.md
     |-- part-2.md
@@ -65,6 +70,6 @@ The controller is local and model-agnostic. It works offline. It controls browse
 
 ## Project status
 
-Shipped: OS-level prototype in `.codebase/`. Full verb CLI, `move.py` seeded Bezier, MSS region with stub fallback, safety gates. Tests: 5 passed.
+Shipped: live OS cursor via cghelper. Move out-and-back verified by position read. Tests: 10 passed.
 
-Next: `desktop doctor` perm checks, MSS timing p95, pipx global install.
+Next: window verbs, then first live click on a user-confirmed target.
