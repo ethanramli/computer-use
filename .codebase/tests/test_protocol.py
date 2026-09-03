@@ -26,6 +26,9 @@ def test_move_exact_land_and_seed():
     assert a == b
     assert a[-1] == (640, 420)
     assert len(a) == 50
+    assert move.duration(0, 0, 640, 420) > 0
+    c = move.points(0, 0, 640, 420, seed=8)
+    assert c[-1] == (640, 420)
 
 
 def test_safety_gates():
