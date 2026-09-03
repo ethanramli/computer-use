@@ -4,3 +4,5 @@ __pycache__/
 *.egg-info/
 /tmp/desktop-current.jpg
 .DS_Store
+# ponytail ultra: build locally, never commit binaries
+.codebase/bin/cghelper
