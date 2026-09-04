@@ -42,13 +42,15 @@ The controller is local and model-agnostic. It works offline. It controls browse
 |-- protocol/
 |   |-- part-1.md
 |   |-- part-2.md
-|   `-- part-3.md
+|   |-- part-3.md
+|   `-- part-4.md
 |-- safety/
 |   `-- part-1.md
 |-- architecture/
 |   |-- part-1.md
 |   |-- part-2.md
-|   `-- part-3.md
+|   |-- part-3.md
+|   `-- part-4.md
 `-- research/
     |-- part-1.md
     |-- part-2.md

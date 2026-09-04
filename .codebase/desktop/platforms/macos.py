@@ -125,6 +125,23 @@ def type_text(text: str, gaps, post: Optional[Callable] = None) -> int:
     return int(out) if out else 0
 
 
+def launch(app: str, post: Optional[Callable] = None) -> None:
+    """Open any installed macOS application in the foreground.
+
+    ``app`` is intentionally not an allow-list: Launch Services resolves
+    application names and paths, so this works for every installed app.
+    """
+    if not isinstance(app, str) or not app.strip():
+        raise ValueError("app must be a non-empty application name or path")
+    app = app.strip()
+    if post is not None:
+        post(("launch", app))
+        return
+    r = subprocess.run(["open", "-a", app], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or f"cannot open {app}").strip())
+
+
 def hotkey(keys: str, post: Optional[Callable] = None) -> None:
     """Press combos like cmd,s or ctrl+alt+t."""
     parts = [p.strip().lower() for p in keys.replace("+", ",").split(",") if p.strip()]

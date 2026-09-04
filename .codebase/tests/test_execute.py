@@ -33,6 +33,40 @@ def test_hotkey_unknown_key():
     raise AssertionError("expected ValueError")
 
 
+def test_launch_routed():
+    seen = []
+    macos.launch("  Any Installed App  ", post=seen.append)
+    assert seen == [("launch", "Any Installed App")]
+
+
+def test_launch_uses_os_resolver_for_any_app(monkeypatch):
+    calls = []
+
+    class Result:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        calls.append((args, kwargs))
+        return Result()
+
+    monkeypatch.setattr(macos.subprocess, "run", fake_run)
+    macos.launch("Visual Studio Code")
+    macos.launch("/Applications/Notes.app")
+    assert [call[0] for call in calls] == [
+        ["open", "-a", "Visual Studio Code"],
+        ["open", "-a", "/Applications/Notes.app"],
+    ]
+
+
+def test_launch_rejects_empty_app():
+    try:
+        macos.launch("   ")
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError")
+
+
 def test_type_gaps_bounded():
     rng = random.Random(0)
     seen = []
