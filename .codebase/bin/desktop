@@ -61,6 +61,8 @@ def main() -> int:
     h.add_argument("keys")
     w = sub.add_parser("wait")
     w.add_argument("--seconds", type=float, default=1.0)
+    ln = sub.add_parser("launch")
+    ln.add_argument("--app", required=True, help="installed application name or .app path")
     sub.add_parser("doctor")
     sub.add_parser("stop")
     args = p.parse_args()
@@ -70,6 +72,16 @@ def main() -> int:
     if args.cmd == "observe":
         path = capture.screenshot(region=args.region)
         return out(protocol.ok({"image": path, "app": args.app}))
+    if args.cmd == "launch":
+        if not args.app.strip():
+            return out(protocol.fail("bad_arg", "app must be a non-empty application name or path", "pass --app 'Application Name'"), 2)
+        if args.execute:
+            try:
+                macos.launch(args.app)
+                return out(protocol.ok({"executed": True, "app": args.app}))
+            except Exception as e:
+                return out(protocol.fail("exec_failed", str(e), "check the app name is installed"), 5)
+        return out(protocol.ok({"app": args.app, "dry_run": True}))
     if args.cmd in ("list_apps", "list_windows", "active-window", "focus_app"):
         # ponytail ultra: fail honestly instead of fake ok until built
         return out(protocol.fail("unimplemented", f"{args.cmd} not built yet", "use observe + click for now"), 4)
