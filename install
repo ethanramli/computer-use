@@ -1,0 +1,60 @@
+#!/bin/sh
+# Install the desktop CLI and persistent computer-mcp server.
+set -eu
+
+project_root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+cd "$project_root"
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "error: python3 is required" >&2
+  exit 1
+fi
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  if ! command -v clang >/dev/null 2>&1; then
+    echo "error: clang is required to build the macOS input helper" >&2
+    exit 1
+  fi
+  clang -fsyntax-only native/cghelper.c
+fi
+
+if command -v pipx >/dev/null 2>&1; then
+  pipx install . --force
+else
+  python3 -m pip install --user .
+
+  # Python's user scripts directory is not on PATH by default on some macOS
+  # installations. When ~/.local/bin is already a configured PATH entry,
+  # expose the installed commands there without replacing unrelated files.
+  user_scripts=$(python3 -m site --user-base)/bin
+  user_shim_dir=$HOME/.local/bin
+  case ":$PATH:" in
+    *":$user_shim_dir:"*)
+      mkdir -p "$user_shim_dir"
+      for command_name in desktop computer-mcp; do
+        source_path=$user_scripts/$command_name
+        target_path=$user_shim_dir/$command_name
+        if [ ! -x "$source_path" ]; then
+          continue
+        fi
+        if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+          if [ -L "$target_path" ] && [ "$(readlink "$target_path")" = "$source_path" ]; then
+            continue
+          fi
+          echo "warning: not replacing existing $target_path" >&2
+          continue
+        fi
+        ln -s "$source_path" "$target_path"
+      done
+      ;;
+  esac
+fi
+
+if command -v desktop >/dev/null 2>&1 && command -v computer-mcp >/dev/null 2>&1; then
+  desktop --help >/dev/null
+  computer-mcp --help >/dev/null
+  echo "Installed desktop and computer-mcp. Run: desktop doctor"
+else
+  echo "Installed, but the user scripts directory is not on PATH." >&2
+  echo "Add the directory reported by pip/pipx to PATH, then run: desktop doctor" >&2
+fi

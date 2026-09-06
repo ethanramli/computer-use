@@ -2,7 +2,11 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
-/tmp/desktop-current.jpg
+.pytest_cache/
 .DS_Store
+.zshrc
 # ponytail ultra: build locally, never commit binaries
-.codebase/bin/cghelper
+build/
+dist/
+desktop/_bin/
+benchmarks/*.json
