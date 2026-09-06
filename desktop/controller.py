@@ -505,7 +505,8 @@ class Controller:
         if self.dry_run:
             return protocol.ok({"app": app, "dry_run": True})
         active = self.backend.focus_app(app)
-        return protocol.ok({"executed": True, "app": app, "active_window": active})
+        return protocol.ok({"executed": True, "app": app, "active_window": active,
+                            "effect_verified": self._app_is(active, app)})
 
     def _launch(self, p):
         app = (p.get("app") or "").strip()
@@ -515,7 +516,14 @@ class Controller:
         if self.dry_run:
             return protocol.ok({"app": app, "dry_run": True})
         active = self.backend.launch(app)
-        return protocol.ok({"executed": True, "app": app, "active_window": active})
+        return protocol.ok({"executed": True, "app": app, "active_window": active,
+                            "effect_verified": self._app_is(active, app)})
+
+    def _app_is(self, actual: str, requested: str) -> bool:
+        matcher = getattr(self.backend, "app_matches", None)
+        if matcher:
+            return bool(matcher(requested, actual))
+        return requested.strip().casefold() == actual.strip().casefold()
 
     # -- pointer -----------------------------------------------------------------
 

@@ -20,19 +20,56 @@ TOOLS: List[Dict[str, Any]] = [
     {
         "name": "desktop",
         "description": (
-            "Run a desktop automation command. Commands: observe, list_apps, "
-            "list_windows, active-window, focus_app, launch, move, click, "
-            "double-click, right_click, drag, scroll, type, click_type, press, "
-            "hotkey, wait, batch, stop, doctor. Coordinates need a fresh "
-            "frame_id from observe. Keyboard input needs an app focus target and "
-            "verification. Challenge/password/payment UI stops with "
-            "needs_attention."
+            "Run a desktop automation command. Real OS input with a visible "
+            "Bezier cursor cue before every action. "
+            "Verify opens: launch/focus_app return active_window plus "
+            "effect_verified (true means the requested app is frontmost). "
+            "If effect_verified is false or focus_failed, stop and observe; "
+            "never type into the wrong app. Then observe to see the result. "
+            "Keys are ONE string, never a list: press takes a single key "
+            "('enter'), hotkey takes a combo ('cmd,space', 'cmd,s'). "
+            "Keyboard input (type/press/hotkey/click_type) always needs "
+            "'app' set to the current active-window value and 'risk' set to "
+            "one of none/deletion/purchase/message/publishing/permission/"
+            "account_security (consequential ones also need confirm:true). "
+            "Coordinate actions (move/click/double-click/right_click/drag/"
+            "click_type) need x/y plus a fresh frame_id from observe in THIS "
+            "session; stale_frame means observe again. "
+            "System UI (Spotlight): hotkey cmd,space with app=current "
+            "active-window, then call active-window again and use THAT value "
+            "as app for the next type/press. Example open-Terminal flow: "
+            "launch Terminal, or hotkey cmd+space, type 'Terminal', press "
+            "enter, then observe. "
+            "Cheap checks: observe with metadata_only:true returns frame_id "
+            "plus active_window with no image; batch observe requires "
+            "metadata_only. Never issue move to explore: only move/click to "
+            "coordinates read from a fresh observe."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "command": {"type": "string"},
-                "params": {"type": "object"},
+                "command": {
+                    "type": "string",
+                    "enum": [
+                        "observe", "list_apps", "list_windows",
+                        "active-window", "focus_app", "launch", "move",
+                        "click", "double-click", "right_click", "drag",
+                        "scroll", "type", "click_type", "press", "hotkey",
+                        "wait", "batch", "stop", "doctor",
+                    ],
+                },
+                "params": {
+                    "type": "object",
+                    "description": (
+                        "observe: {region:'x,y,w,h', metadata_only, path_mode}. "
+                        "launch/focus_app: {app}. "
+                        "type: {text, app, risk, timing?, verify?}. "
+                        "press: {keys:'enter', app, risk}. "
+                        "hotkey: {keys:'cmd,space', app, risk}. "
+                        "click/move: {x, y, frame_id, risk}. "
+                        "batch: {actions:[{op,...}], app?, risk?}."
+                    ),
+                },
             },
             "required": ["command"],
         },

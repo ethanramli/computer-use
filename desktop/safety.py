@@ -84,7 +84,10 @@ ALLOWED_PARAMS = {
 
 KEY_NAMES = {
     "return", "enter", "escape", "esc", "tab", "space", "delete",
-    "backspace", "up", "down", "left", "right",
+    "backspace", "forward_delete", "up", "down", "left", "right",
+    "home", "end", "pageup", "pagedown",
+    "f1", "f2", "f3", "f4", "f5", "f6",
+    "f7", "f8", "f9", "f10", "f11", "f12",
     "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
     "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
     "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
@@ -130,6 +133,10 @@ def is_blocked_keys(keys: str) -> bool:
 
 def key_parts(keys: str) -> List[str]:
     """Canonicalize aliases, separators, and modifier ordering."""
+    if not isinstance(keys, str):
+        raise ValueError(
+            "keys must be a string like 'enter' or 'cmd,space', not a list"
+        )
     raw = [
         p.strip().lower()
         for p in keys.replace("-", "+").replace(",", "+").split("+")
@@ -143,6 +150,10 @@ def key_parts(keys: str) -> List[str]:
 
 
 def validate_keys(keys: str) -> List[str]:
+    if not isinstance(keys, str):
+        raise ValueError(
+            "keys must be a string like 'enter' or 'cmd,space', not a list"
+        )
     parts = key_parts(keys)
     if not parts:
         raise ValueError("keys required")
@@ -250,8 +261,10 @@ def preflight_command(name: str, params: dict) -> Optional[PreflightIssue]:
         return PreflightIssue("bad_arg", f"unknown command: {name}")
     unknown = set(params) - ALLOWED_PARAMS[name]
     if unknown:
+        hint = _unknown_arg_hint(name, unknown)
         return PreflightIssue(
-            "bad_arg", f"unknown argument(s): {', '.join(sorted(map(str, unknown)))}"
+            "bad_arg",
+            f"unknown argument(s): {', '.join(sorted(map(str, unknown)))}.{hint}",
         )
     if "app" in params and not isinstance(params["app"], str):
         return PreflightIssue("bad_arg", "app must be a string")
@@ -361,6 +374,22 @@ def preflight_command(name: str, params: dict) -> Optional[PreflightIssue]:
         text = params.get("text", "") if name in {"type", "click_type"} else ""
         return confirmation_issue(params, text if isinstance(text, str) else "")
     return None
+
+
+def _unknown_arg_hint(name: str, unknown: set) -> str:
+    """Point models at the right param name for the most common mix-ups."""
+    hints = []
+    if "target" in unknown:
+        hints.append("did you mean 'app'? keyboard input needs 'app'")
+    if name in {"press", "hotkey"} and "text" in unknown:
+        hints.append("press/hotkey take 'keys' (e.g. 'enter', 'cmd,space'), not 'text'")
+    if name in {"press", "hotkey"} and "key_name" in unknown:
+        hints.append("use 'keys' as one string, not 'key_name' or a list")
+    if name in {"type", "click_type"} and "keys" in unknown:
+        hints.append("type/click_type take 'text', not 'keys'")
+    if "frame-id" in unknown:
+        hints.append("use 'frame_id' with an underscore")
+    return (" " + " ".join(hints)) if hints else ""
 
 
 def validate_text(text: str) -> str:

@@ -53,16 +53,18 @@ def _logistic(x: float) -> float:
 
 
 def _control_points(rng: random.Random, start: Point, end: Point) -> Tuple[Point, Point]:
-    # ponytail: control points near endpoints keep path directed; a p2
+    # ponytail: shrink offsets when start==end so keystroke cues pulse in
+    # place instead of circling; long moves keep scale 1.0 (bit-identical).
+    span = math.hypot(end[0] - start[0], end[1] - start[1])
+    scale = min(1.0, max(span, 8.0) / 80.0)
+
+    def off() -> int:
+        return int(round(_anysign(rng, *INTERVAL_RADIUS) * scale))
+
+    # Control points near endpoints keep path directed; a p2
     # behind the target yields a natural occasional overshoot
-    p1 = (
-        start[0] + _anysign(rng, *INTERVAL_RADIUS),
-        start[1] + _anysign(rng, *INTERVAL_RADIUS),
-    )
-    p2 = (
-        end[0] + _anysign(rng, *INTERVAL_RADIUS),
-        end[1] + _anysign(rng, *INTERVAL_RADIUS),
-    )
+    p1 = (start[0] + off(), start[1] + off())
+    p2 = (end[0] + off(), end[1] + off())
     return p1, p2
 
 

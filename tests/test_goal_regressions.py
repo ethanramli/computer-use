@@ -425,12 +425,20 @@ def test_controller_uses_only_the_shared_app_matching_seam():
     assert "platforms.macos" not in inspect.getsource(controller_module)
 
 
-def test_macos_backend_uses_shared_contract_and_structured_list_apps():
+def test_macos_backend_lists_running_apps_and_fails_honestly(monkeypatch):
+    import json
+
+    from desktop.platforms import macos
     from desktop.platforms.base import Backend, CapabilityError
     from desktop.platforms.macos import MacosBackend
 
     backend = MacosBackend()
     assert isinstance(backend, Backend)
+    monkeypatch.setattr(
+        macos, "_run_jxa", lambda _script: json.dumps(["Terminal", "Finder"])
+    )
+    assert backend.list_apps() == ["Finder", "Terminal"]
+    monkeypatch.setattr(macos, "_run_jxa", lambda _script: "")
     with pytest.raises(CapabilityError) as error:
         backend.list_apps()
     assert error.value.capability == "list_apps"

@@ -28,8 +28,11 @@ FLAG_CTRL = 1 << 18
 
 KEYCODES = {
     "return": 36, "enter": 36, "escape": 53, "esc": 53, "tab": 48,
-    "space": 49, "delete": 51, "backspace": 51,
+    "space": 49, "delete": 51, "backspace": 51, "forward_delete": 117,
     "up": 126, "down": 125, "left": 123, "right": 124,
+    "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
+    "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+    "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
     "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4,
     "i": 34, "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31,
     "p": 35, "q": 12, "r": 15, "s": 1, "t": 17, "u": 32, "v": 9,
@@ -179,20 +182,69 @@ def active_window() -> str:
         "const app = $.NSWorkspace.sharedWorkspace.frontmostApplication; "
         'app ? ObjC.unwrap(app.localizedName) : ""'
     )
-    r = subprocess.run(
-        ["/usr/bin/osascript", "-l", "JavaScript", "-e", script],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    name = (r.stdout or "").strip()
-    if r.returncode == 0 and name:
+    name = _run_jxa(script)
+    if name:
         return name
     # Window ordering remains a useful fallback on systems without AppKit/JXA.
     try:
         return _run(["frontmost"])
     except RuntimeError as exc:
         raise CapabilityError("active_window", str(exc)) from exc
+
+
+def _run_jxa(script: str) -> str:
+    """Run a read-only JXA snippet; return stdout or "" on failure."""
+    try:
+        r = subprocess.run(
+            ["/usr/bin/osascript", "-l", "JavaScript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if r.returncode == 0:
+        return (r.stdout or "").strip()
+    return ""
+
+
+def list_apps() -> List[str]:
+    """Return sorted names of running regular applications (read-only).
+
+    Same JXA/NSWorkspace mechanism as active_window: no new permission
+    surface, no app-specific branches. Lets callers verify whether an
+    app is running at all, complementing active_window's foreground check.
+    """
+    script = (
+        'ObjC.import("AppKit"); '
+        "const apps = $.NSWorkspace.sharedWorkspace.runningApplications; "
+        "const names = []; "
+        "for (let i = 0; i < apps.count; i++) { "
+        "const app = apps.objectAtIndex(i); "
+        "if (app.activationPolicy === "
+        "$.NSApplicationActivationPolicyRegular) { "
+        "const n = ObjC.unwrap(app.localizedName); "
+        "if (n) names.push(n); } } "
+        "JSON.stringify(names);"
+    )
+    out = _run_jxa(script)
+    if not out:
+        raise CapabilityError(
+            "list_apps", "running application list is unavailable"
+        )
+    try:
+        names = json.loads(out)
+    except (TypeError, ValueError) as exc:
+        raise CapabilityError(
+            "list_apps", "running application list is unavailable"
+        ) from exc
+    if not isinstance(names, list):
+        raise CapabilityError(
+            "list_apps", "running application list is unavailable"
+        )
+    return sorted(
+        {name for name in names if isinstance(name, str) and name.strip()}
+    )
 
 
 def replay(
@@ -506,6 +558,9 @@ class MacosBackend(Backend):
 
     def focus_app(self, app: str, timeout: float = 5.0) -> str:
         return focus_app(app, timeout=timeout)
+
+    def list_apps(self):
+        return list_apps()
 
     def release_all(self) -> None:
         _run(["release"])
