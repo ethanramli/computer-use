@@ -2,12 +2,22 @@
 
 import os
 import platform
+import re
 import shutil
 import subprocess
 from pathlib import Path
 
 from setuptools import Distribution, setup
 from setuptools.command.build_py import build_py
+
+
+def _version() -> str:
+    # ponytail: regex the single source; importing desktop at build time
+    # would drag package deps into setup.
+    text = (
+        Path(__file__).resolve().parent / "desktop" / "_version.py"
+    ).read_text()
+    return re.search(r'__version__ = "([^"]+)"', text).group(1)
 
 
 class BuildPythonAndMacHelper(build_py):
@@ -56,7 +66,7 @@ class PlatformDistribution(Distribution):
 
 setup(
     name="computer-automation",
-    version="0.1.0",
+    version=_version(),
     python_requires=">=3.9",
     packages=["desktop", "desktop.platforms"],
     install_requires=["mss>=9.0; sys_platform == 'darwin'"],

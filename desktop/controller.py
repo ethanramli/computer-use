@@ -10,6 +10,7 @@ import time
 from typing import Any, Dict, Optional
 
 from . import protocol, safety, timing
+from ._version import __version__
 from .frames import FrameStore, FrameTooLarge, validate_layout
 from .move import points
 from .platforms.base import Backend, CapabilityError, FocusError, InputCancelled
@@ -1139,6 +1140,7 @@ class Controller:
         }
         return protocol.ok({
             "platform": b.backend_name(),
+            "version": __version__,
             "ready": all(check["ok"] is True for check in checks.values()),
             "checks": checks,
         })

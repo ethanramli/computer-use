@@ -104,3 +104,11 @@ def test_mcp_tool_schema_names_commands_and_spotlight():
     assert "hotkey" in schema["enum"] and "launch" in schema["enum"]
     assert "cmd,space" in TOOLS[0]["description"]
     assert "effect_verified" in TOOLS[0]["description"]
+
+
+def test_version_reported_everywhere():
+    import desktop
+
+    assert desktop.__version__
+    r = _ctl().command("doctor", {})
+    assert r["data"]["version"] == desktop.__version__

@@ -10,8 +10,13 @@ import os
 import sys
 
 from . import protocol
+from ._version import __version__
 from .controller import EXIT_CODES, Controller
 from .platforms import get_backend
+
+
+def _version_string() -> str:
+    return f"%(prog)s {__version__}"
 
 
 class CliUsageError(ValueError):
@@ -133,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="OS-level desktop control. Real OS input only. "
                     "Dry-run is the default; pass --execute to act.",
     )
+    p.add_argument("--version", action="version", version=_version_string())
     mode = p.add_mutually_exclusive_group()
     mode.add_argument("--execute", action="store_true",
                       help="actually move the cursor and post input "

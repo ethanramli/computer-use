@@ -10,6 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 from . import protocol
+from ._version import __version__
 from .controller import Controller
 from .platforms.base import Backend
 
@@ -147,7 +148,7 @@ class McpServer:
             return {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "computer-mcp", "version": "0.1.0"},
+                "serverInfo": {"name": "computer-mcp", "version": __version__},
             }
         if method == "ping":
             return {}

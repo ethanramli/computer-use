@@ -26,7 +26,6 @@ Recording permission, and MSS separately, with recovery guidance for each.
 
 Configure any MCP client to keep `computer-mcp` running as a local stdio
 process:
-
 ```json
 {
   "mcpServers": {
@@ -40,6 +39,17 @@ process:
 The installed `desktop` CLI defaults to dry-run. `computer-mcp` is the normal
 execution path because one persistent process preserves frame state, serializes
 input, and can process request-scoped cancellation while work runs.
+
+## Update
+
+```bash
+git pull
+./install
+```
+
+Then restart the MCP client so the new `computer-mcp` process loads.
+Compare `desktop doctor`'s reported version against the latest GitHub
+release to see whether an update exists.
 
 ## Agent workflow
 
