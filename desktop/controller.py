@@ -1069,22 +1069,54 @@ class Controller:
                 failure_code = code
                 status = code if code in {"cancelled", "deadline_exceeded"} else "failed"
                 break
-        # never claim rollback; report honestly
+        # never claim rollback; report honestly. A requested terminal
+        # observation runs after the action loop and any failure cleanup.
+        data = {
+            "status": status,
+            "last_completed": last_completed,
+            "receipts": receipts,
+        }
         if status == "completed":
-            return protocol.ok({
-                "status": status,
-                "last_completed": last_completed,
-                "receipts": receipts,
-            })
-        return protocol.partial(
-            {
-                "status": status,
-                "last_completed": last_completed,
-                "receipts": receipts,
-            },
-            failure_code,
-            f"batch {status} at action {last_completed + 1}",
-            "inspect receipts; executed events cannot be undone")
+            result = protocol.ok(data)
+        else:
+            result = protocol.partial(
+                data,
+                failure_code,
+                f"batch {status} at action {last_completed + 1}",
+                "inspect receipts; executed events cannot be undone")
+        final_request = p.get("final_observe")
+        if isinstance(final_request, dict):
+            wants_image = final_request.get("image", False)
+            observation_params = {} if wants_image else {"metadata_only": True}
+            try:
+                observed = self._observe(observation_params)
+                if observed.get("ok"):
+                    observation_data = dict(observed.get("data") or {})
+                    image_b64 = observation_data.pop("image_b64", None)
+                    data["final_observation"] = {
+                        "ok": True,
+                        "data": observation_data,
+                    }
+                    if isinstance(image_b64, str):
+                        data["image_b64"] = image_b64
+                else:
+                    data["final_observation"] = {
+                        "ok": False,
+                        "error": observed.get("error", {
+                            "code": "exec_failed",
+                            "message": "final observation failed",
+                        }),
+                    }
+            except Exception as exc:
+                data["final_observation"] = {
+                    "ok": False,
+                    "error": {
+                        "code": "exec_failed",
+                        "message": str(exc),
+                        "recover": "inspect the target and retry observation",
+                    },
+                }
+        return result
 
     # -- doctor -------------------------------------------------------------------------
 

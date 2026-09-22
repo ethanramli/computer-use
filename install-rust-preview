@@ -1,0 +1,47 @@
+#!/bin/sh
+# Build and install the Rust migration beside the Python commands.
+set -eu
+
+project_root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+preview_root=${COMPUTER_AUTOMATION_RUST_PREFIX:-"$HOME/.local/lib/computer-automation-rust"}
+shim_dir=${COMPUTER_AUTOMATION_RUST_SHIM_DIR:-"$HOME/.local/bin"}
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "error: cargo is required for the Rust preview" >&2
+  exit 1
+fi
+
+cd "$project_root"
+cargo build --workspace --release --locked
+mkdir -p "$preview_root/bin" "$shim_dir"
+/usr/bin/install -m 0755 target/release/desktop "$preview_root/bin/desktop"
+/usr/bin/install -m 0755 target/release/computer-mcp "$preview_root/bin/computer-mcp"
+
+if [ "$(uname -s)" = "Darwin" ]; then
+  if ! command -v clang >/dev/null 2>&1; then
+    echo "error: clang is required to build the macOS helper" >&2
+    exit 1
+  fi
+  clang -O2 -arch arm64 -arch x86_64 \
+    -o "$preview_root/bin/cghelper" native/cghelper.c \
+    -framework CoreGraphics -framework ApplicationServices -framework ImageIO
+  chmod 0755 "$preview_root/bin/cghelper"
+fi
+
+for command_name in desktop computer-mcp; do
+  target_path=$preview_root/bin/$command_name
+  shim_path=$shim_dir/$command_name-rust
+  if [ -e "$shim_path" ] || [ -L "$shim_path" ]; then
+    if [ -L "$shim_path" ] && [ "$(readlink "$shim_path")" = "$target_path" ]; then
+      continue
+    fi
+    echo "warning: not replacing existing $shim_path" >&2
+    continue
+  fi
+  ln -s "$target_path" "$shim_path"
+done
+
+"$preview_root/bin/desktop" --help >/dev/null
+"$preview_root/bin/computer-mcp" --help >/dev/null
+echo "Installed Rust preview as desktop-rust and computer-mcp-rust."
+echo "The existing Python desktop and computer-mcp commands remain unchanged."

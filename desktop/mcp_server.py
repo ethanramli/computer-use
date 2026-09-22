@@ -43,7 +43,8 @@ TOOLS: List[Dict[str, Any]] = [
             "enter, then observe. "
             "Cheap checks: observe with metadata_only:true returns frame_id "
             "plus active_window with no image; batch observe requires "
-            "metadata_only. Never issue move to explore: only move/click to "
+            "metadata_only. Use batch final_observe:{image:true} to receive "
+            "one final screenshot with its receipts. Never issue move to explore: only move/click to "
             "coordinates read from a fresh observe."
         ),
         "inputSchema": {
@@ -68,7 +69,8 @@ TOOLS: List[Dict[str, Any]] = [
                         "press: {keys:'enter', app, risk}. "
                         "hotkey: {keys:'cmd,space', app, risk}. "
                         "click/move: {x, y, frame_id, risk}. "
-                        "batch: {actions:[{op,...}], app?, risk?}."
+                        "batch: {actions:[{op,...}], app?, risk?, "
+                        "final_observe?:{image?:boolean}}."
                     ),
                 },
             },

@@ -37,6 +37,10 @@ This repository contains an OS-level, cross-platform desktop automation toolkit 
   required by the client protocol.
 - Bound screenshot bytes in memory and apply backpressure before accepting another
   encoded image; metadata-only observations are preferred when an image is not needed.
+- A batch may request one optional final screenshot after its action sequence. Return
+  it as MCP image content in the same response; keep image bytes out of JSON text and
+  do not capture or deliver an image after every batch step. This final observation
+  removes a client round trip without implying that the UI has settled.
 - Expose a batch action command for safe sequences such as multiple clicks, pointer
   moves, scrolling, and key presses.
 - Do not add artificial delays between clicks or key events unless required by the
@@ -68,12 +72,27 @@ Every implementation must include:
 - Prefer accessibility/UI-tree targeting over hard-coded coordinates when available.
 - Use coordinates only with an explicit screen-state verification step.
 - Launching an app must bring it to the foreground through the platform adapter; do not assume that a successful launch command means subsequent input has the correct focus.
-- Before browser or app input, explicitly focus/verify the target window and observe again after the action. If focus cannot be verified, stop rather than typing into the currently active app.
+- Before keyboard input, verify focus and inspect the target state as required by the
+  controller. If focus cannot be verified, stop rather than typing into the current
+  app. After a meaningful action, verify by requesting an observation; for a batch,
+  prefer its optional final screenshot so the AI receives it with the action receipts.
+  Use another observation only when it is needed to choose or authorize a later action.
 - The shared controller must select an appropriate backend at runtime. Basic operations
   may use cross-platform libraries such as `mss` and PyAutoGUI/pynput; enhanced focus,
   accessibility, and input injection may use native adapters.
 - Backends must report unsupported capabilities clearly. Cross-platform support does not
   require identical capabilities on every OS, especially under Linux Wayland.
+
+## Current implementation notes
+
+- Standalone MCP `observe` already returns screenshots as image content without
+  saving a screenshot file by default.
+- Batch `observe` actions permit metadata only. `final_observe: {"image": true}`
+  requests one terminal capture attached as MCP image content; this is implemented
+  and verified in Python and Rust. Rust remains a side-by-side preview while
+  external non-macOS host checks are outstanding; Python remains the default.
+- The implemented native backend is macOS. Windows, X11, and Wayland backends report
+  unsupported capabilities pending native implementation and verification.
 
 ## Agent workflow
 

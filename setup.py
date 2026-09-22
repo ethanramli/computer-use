@@ -46,6 +46,8 @@ class BuildPythonAndMacHelper(build_py):
                 "CoreGraphics",
                 "-framework",
                 "ApplicationServices",
+                "-framework",
+                "ImageIO",
             ],
             check=True,
         )

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -445,6 +446,65 @@ def test_native_helper_guards_every_input_command_with_accessibility_trust():
         code = helper_source.read()
 
     assert "requires_accessibility(argv[1]) && !AXIsProcessTrusted()" in code
+
+
+@pytest.mark.skipif(
+    sys.platform != "darwin" or os.environ.get("COMPUTER_AUTOMATION_LIVE_TEST") != "1",
+    reason="live desktop checks require an explicit macOS opt-in",
+)
+def test_live_native_helper_returns_focused_metadata():
+    root = os.path.dirname(os.path.dirname(__file__))
+    candidates = [
+        os.path.join(root, "build", "cghelper"),
+        os.path.join(root, "desktop", "_bin", "cghelper"),
+    ]
+    helper = next((path for path in candidates if os.path.isfile(path)), None)
+    if helper is None:
+        pytest.skip("macOS cghelper is not built")
+
+    with tempfile.NamedTemporaryFile(
+        prefix="computer-automation-rust-focus-", suffix=".txt", delete=False
+    ) as document:
+        document.write(b"rust focus regression\n")
+        document_path = document.name
+    document_name = os.path.basename(document_path)
+    try:
+        launch = subprocess.run(
+            ["open", "-a", "TextEdit", document_path],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert launch.returncode == 0, launch.stderr
+        deadline = time.monotonic() + 5
+        result = None
+        while time.monotonic() < deadline:
+            result = subprocess.run(
+                [helper, "focused"], capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                break
+            time.sleep(0.05)
+        assert result is not None
+        assert result.returncode == 0, result.stderr
+        state = json.loads(result.stdout)
+        assert isinstance(state, dict)
+        assert state.get("role")
+    finally:
+        subprocess.run(
+            [
+                "osascript",
+                "-e",
+                f'tell application "TextEdit" to close (first document whose name is "{document_name}") saving no',
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        try:
+            os.unlink(document_path)
+        except FileNotFoundError:
+            pass
 
 
 def test_native_scroll_loop_has_no_unrequested_artificial_delay():

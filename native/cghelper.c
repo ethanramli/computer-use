@@ -4,10 +4,11 @@
  * cannot pass CGPoint by value on old ARM Python). Moves batch all
  * points through a single spawn. Links only system frameworks.
  *
- * Build: mkdir -p ../build && clang -O2 -o ../build/cghelper cghelper.c -framework CoreGraphics -framework ApplicationServices
+ * Build: mkdir -p ../build && clang -O2 -o ../build/cghelper cghelper.c -framework CoreGraphics -framework ApplicationServices -framework ImageIO
  */
 #include <ApplicationServices/ApplicationServices.h>
 #include <CoreGraphics/CoreGraphics.h>
+#include <ImageIO/ImageIO.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -135,7 +136,7 @@ static int type_stdin(int gap) {
 
 static void usage(void) {
   fprintf(stderr,
-          "usage: cghelper <pos|displays|frontmost|focused|element x y|trusted|screen-recording|move x y|movebatch gap_us|click x y btn clicks|drag x1 y1 x2 y2|scroll dy dx|type gap_us|key code flags|release>\n");
+          "usage: cghelper <pos|displays|frontmost|focused|element x y|trusted|screen-recording|capture x y width height|move x y|movebatch gap_us|click x y btn clicks|drag x1 y1 x2 y2|scroll dy dx|type gap_us|key code flags|release>\n");
 }
 
 static int requires_accessibility(const char *command) {
@@ -190,6 +191,52 @@ static int print_display_layout(void) {
   printf("]}\n");
   free(ids);
   return 0;
+}
+
+static int capture_png(int x, int y, int width, int height) {
+  if (width <= 0 || height <= 0) {
+    fprintf(stderr, "cghelper: capture width and height must be positive\n");
+    return 2;
+  }
+  if (!CGPreflightScreenCaptureAccess()) {
+    fprintf(stderr, "cghelper: Screen Recording permission missing\n");
+    return 6;
+  }
+  CGRect bounds = CGRectMake((double)x, (double)y, (double)width,
+                             (double)height);
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  CGImageRef image = CGWindowListCreateImage(
+      bounds, kCGWindowListOptionOnScreenOnly, kCGNullWindowID,
+      kCGWindowImageDefault);
+#pragma clang diagnostic pop
+  if (image == NULL) {
+    fprintf(stderr, "cghelper: screen capture unavailable\n");
+    return 4;
+  }
+  CFMutableDataRef data = CFDataCreateMutable(kCFAllocatorDefault, 0);
+  CGImageDestinationRef destination =
+      data == NULL ? NULL : CGImageDestinationCreateWithData(
+                                data, CFSTR("public.png"), 1, NULL);
+  if (destination == NULL) {
+    if (data) CFRelease(data);
+    CGImageRelease(image);
+    fprintf(stderr, "cghelper: PNG encoder unavailable\n");
+    return 3;
+  }
+  CGImageDestinationAddImage(destination, image, NULL);
+  bool encoded = CGImageDestinationFinalize(destination);
+  CFRelease(destination);
+  CGImageRelease(image);
+  CFIndex length = encoded ? CFDataGetLength(data) : 0;
+  const UInt8 *bytes = length > 0 ? CFDataGetBytePtr(data) : NULL;
+  size_t written = bytes == NULL ? 0 : fwrite(bytes, 1, (size_t)length, stdout);
+  CFRelease(data);
+  if (written != (size_t)length || length == 0) {
+    fprintf(stderr, "cghelper: PNG capture failed\n");
+    return 3;
+  }
+  return fflush(stdout) == 0 ? 0 : 3;
 }
 
 static CFStringRef copy_string_attribute(AXUIElementRef element,
@@ -262,6 +309,8 @@ static int print_element_metadata(AXUIElementRef element) {
   return 0;
 }
 
+static AXUIElementRef copy_frontmost_application(void);
+
 static int print_focused_metadata(void) {
   if (!AXIsProcessTrusted()) {
     fprintf(stderr, "cghelper: Accessibility trust missing\n");
@@ -269,13 +318,36 @@ static int print_focused_metadata(void) {
   }
   AXUIElementRef system = AXUIElementCreateSystemWide();
   AXUIElementRef app = NULL, element = NULL;
-  if (system == NULL ||
-      AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute,
-                                    (CFTypeRef *)&app) != kAXErrorSuccess ||
-      app == NULL ||
-      AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute,
-                                    (CFTypeRef *)&element) != kAXErrorSuccess ||
-      element == NULL) {
+  AXError app_error = system == NULL
+                          ? kAXErrorCannotComplete
+                          : AXUIElementCopyAttributeValue(
+                                system, kAXFocusedApplicationAttribute,
+                                (CFTypeRef *)&app);
+  AXError element_error = app == NULL
+                              ? kAXErrorCannotComplete
+                              : AXUIElementCopyAttributeValue(
+                                    app, kAXFocusedUIElementAttribute,
+                                    (CFTypeRef *)&element);
+  if (element_error != kAXErrorSuccess || element == NULL) {
+    /* Some macOS hosts deny the system-wide focused-application attribute
+     * while still allowing app-scoped AX queries. Resolve the frontmost
+     * window owner and retry against that application before failing closed. */
+    if (element)
+      CFRelease(element);
+    if (app)
+      CFRelease(app);
+    app = copy_frontmost_application();
+    element = NULL;
+    element_error = app == NULL
+                        ? kAXErrorCannotComplete
+                        : AXUIElementCopyAttributeValue(
+                              app, kAXFocusedUIElementAttribute,
+                              (CFTypeRef *)&element);
+  }
+  if (app_error != kAXErrorSuccess && app == NULL) {
+    element_error = kAXErrorCannotComplete;
+  }
+  if (element_error != kAXErrorSuccess || element == NULL) {
     if (element) CFRelease(element);
     if (app) CFRelease(app);
     if (system) CFRelease(system);
@@ -311,7 +383,7 @@ static int print_position_metadata(int x, int y) {
   return result;
 }
 
-static int print_frontmost_window_owner(void) {
+static CFDictionaryRef copy_frontmost_window(void) {
   /* CGWindowListCopyWindowInfo does not guarantee front-to-back order.
    * The Python layer's JXA-based active_window() is the primary path;
    * this is a C fallback. Skip hidden/zero-size windows to avoid
@@ -320,39 +392,75 @@ static int print_frontmost_window_owner(void) {
       kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
       kCGNullWindowID);
   if (windows == NULL)
-    return 3;
+    return NULL;
   CFIndex count = CFArrayGetCount(windows);
   for (CFIndex i = 0; i < count; i++) {
     CFDictionaryRef window = (CFDictionaryRef)CFArrayGetValueAtIndex(windows, i);
-    CFNumberRef layer_value = (CFNumberRef)CFDictionaryGetValue(window, kCGWindowLayer);
+    CFNumberRef layer_value =
+        (CFNumberRef)CFDictionaryGetValue(window, kCGWindowLayer);
     int layer = -1;
-    if (layer_value == NULL || !CFNumberGetValue(layer_value, kCFNumberIntType, &layer) || layer != 0)
+    if (layer_value == NULL ||
+        !CFNumberGetValue(layer_value, kCFNumberIntType, &layer) || layer != 0)
       continue;
-    /* Skip windows with zero size (overlays, status items) */
-    CFDictionaryRef frame = (CFDictionaryRef)CFDictionaryGetValue(window, CFSTR("kCGWindowFrame"));
+    CFDictionaryRef frame =
+        (CFDictionaryRef)CFDictionaryGetValue(window, CFSTR("kCGWindowFrame"));
     if (frame) {
       CFNumberRef w_val = NULL, h_val = NULL;
-      CFDictionaryGetValueIfPresent(frame, CFSTR("Width"), (const void **)&w_val);
-      CFDictionaryGetValueIfPresent(frame, CFSTR("Height"), (const void **)&h_val);
-      double ww = 0, hh = 0;
-      if (w_val) CFNumberGetValue(w_val, kCFNumberDoubleType, &ww);
-      if (h_val) CFNumberGetValue(h_val, kCFNumberDoubleType, &hh);
-      if (ww < 1 || hh < 1)
+      CFDictionaryGetValueIfPresent(frame, CFSTR("Width"),
+                                    (const void **)&w_val);
+      CFDictionaryGetValueIfPresent(frame, CFSTR("Height"),
+                                    (const void **)&h_val);
+      double width = 0, height = 0;
+      if (w_val)
+        CFNumberGetValue(w_val, kCFNumberDoubleType, &width);
+      if (h_val)
+        CFNumberGetValue(h_val, kCFNumberDoubleType, &height);
+      if (width < 1 || height < 1)
         continue;
     }
-    CFStringRef owner = (CFStringRef)CFDictionaryGetValue(window, kCGWindowOwnerName);
-    if (owner == NULL)
+    if (CFDictionaryGetValue(window, kCGWindowOwnerName) == NULL)
       continue;
-    char name[1024];
-    if (CFStringGetCString(owner, name, sizeof(name), kCFStringEncodingUTF8)) {
-      printf("%s\n", name);
-      CFRelease(windows);
-      return 0;
-    }
+    CFRetain(window);
+    CFRelease(windows);
+    return window;
   }
   CFRelease(windows);
-  fprintf(stderr, "cghelper: no frontmost window found\n");
-  return 4;
+  return NULL;
+}
+
+static AXUIElementRef copy_frontmost_application(void) {
+  CFDictionaryRef window = copy_frontmost_window();
+  if (window == NULL)
+    return NULL;
+  CFNumberRef pid_value =
+      (CFNumberRef)CFDictionaryGetValue(window, kCGWindowOwnerPID);
+  int pid = 0;
+  AXUIElementRef app = NULL;
+  if (pid_value != NULL &&
+      CFNumberGetValue(pid_value, kCFNumberIntType, &pid) && pid > 0)
+    app = AXUIElementCreateApplication((pid_t)pid);
+  CFRelease(window);
+  return app;
+}
+
+static int print_frontmost_window_owner(void) {
+  CFDictionaryRef window = copy_frontmost_window();
+  if (window == NULL) {
+    fprintf(stderr, "cghelper: no frontmost window found\n");
+    return 4;
+  }
+  CFStringRef owner =
+      (CFStringRef)CFDictionaryGetValue(window, kCGWindowOwnerName);
+  char name[1024];
+  int result = owner != NULL &&
+                       CFStringGetCString(owner, name, sizeof(name),
+                                          kCFStringEncodingUTF8)
+                   ? (printf("%s\n", name), 0)
+                   : 4;
+  CFRelease(window);
+  if (result != 0)
+    fprintf(stderr, "cghelper: no frontmost window found\n");
+  return result;
 }
 
 int main(int argc, char **argv) {
@@ -393,6 +501,9 @@ int main(int argc, char **argv) {
     printf("%d\n", CGPreflightScreenCaptureAccess() ? 1 : 0);
     return 0;
   }
+  if (strcmp(argv[1], "capture") == 0 && argc == 6)
+    return capture_png(atoi(argv[2]), atoi(argv[3]), atoi(argv[4]),
+                       atoi(argv[5]));
   if (strcmp(argv[1], "move") == 0 && argc == 4) {
     mouse_at(kCGEventMouseMoved, atoi(argv[2]), atoi(argv[3]), 0, 0);
     return 0;

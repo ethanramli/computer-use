@@ -25,6 +25,31 @@ Both console entry points come from that wheel:
 - `desktop`: JSON CLI; dry-run unless `--execute` is present.
 - `computer-mcp`: persistent newline-delimited JSON-RPC/MCP stdio server.
 
+## Rust migration checks
+
+```bash
+cargo test --workspace --locked
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo run --bin desktop -- --help
+DESKTOP_FAKE_BACKEND=1 cargo run --bin desktop -- active-window
+```
+
+The Rust `desktop` CLI and `computer-mcp` stdio adapter include the native
+macOS provider. The approved macOS live-input verification is complete; the
+Python entry points remain the installed default while native checks on the
+other supported-by-plan hosts are still outstanding. Install the release build
+beside them:
+
+```bash
+./install-rust-preview
+desktop-rust doctor --execute
+computer-mcp-rust --help
+```
+
+The preview installer creates only `desktop-rust` and `computer-mcp-rust`
+shims. It does not replace `desktop` or `computer-mcp`.
+
 `computer-mcp --help` terminates normally. A protocol smoke test is also
 terminating:
 
@@ -66,9 +91,18 @@ Build artifacts belong under ignored `build/`, never beside source:
 ```bash
 mkdir -p build
 clang -O2 -arch arm64 -arch x86_64 -o build/cghelper \
-  native/cghelper.c -framework CoreGraphics -framework ApplicationServices
+  native/cghelper.c -framework CoreGraphics -framework ApplicationServices \
+  -framework ImageIO
 clang -O2 -o build/receipt-window native/receipt-window.c \
   -framework CoreGraphics -framework ApplicationServices
+```
+
+The focused-element regression is opt-in because it opens a temporary harmless
+TextEdit document and closes it without saving:
+
+```bash
+COMPUTER_AUTOMATION_LIVE_TEST=1 \
+  python3 -m pytest -q tests/test_final_regressions.py -k live_native_helper
 ```
 
 The receipt window is a listen-only manual measurement fixture. It is not

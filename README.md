@@ -51,14 +51,27 @@ Then restart the MCP client so the new `computer-mcp` process loads.
 Compare `desktop doctor`'s reported version against the latest GitHub
 release to see whether an update exists.
 
+The Rust migration can be installed beside the Python commands while native
+verification is underway:
+
+```bash
+./install-rust-preview
+desktop-rust doctor --execute
+```
+
+This preview uses separate `desktop-rust` and `computer-mcp-rust` names. The
+regular install remains available throughout the migration.
+
 ## Agent workflow
 
 1. Call `observe` in a persistent MCP session.
 2. Check the active window and retain the returned `frame_id` and display
    layout.
-3. Send one small action, or a fully preflighted batch, through that same
-   session.
-4. Observe again after a meaningful state change and verify the result.
+3. Send one small action or a fully preflighted batch through that same
+   session. A batch can request one final screenshot in the same MCP response
+   as its action receipts with `final_observe: {"image": true}`.
+4. Use the observation to verify the result. Request another one only when
+   needed to choose or authorize a later action.
 
 Coordinate input requires a fresh frame from the same controller process. The
 one-shot CLI therefore refuses executed coordinate actions rather than
@@ -98,6 +111,8 @@ an explicit target application and a verifiable, non-secure focused UI state.
   replaces one owner-private temporary file and removes it at shutdown.
 - MCP observations return screenshots as direct image content, keeping image
   bytes out of the JSON text envelope.
+- Batch `final_observe` can return one final screenshot as MCP image content;
+  observations within the action sequence remain metadata-only.
 - Logs and receipts omit typed text, secrets, credentials, and screenshot data.
 
 ## Repository layout

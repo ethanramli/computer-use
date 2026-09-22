@@ -54,6 +54,10 @@ KNOWN_OPS = {
     "drag", "scroll", "type", "press", "hotkey", "wait",
     "click_type", "batch", "stop", "doctor",
 }
+INPUT_COMMANDS = {
+    "move", "click", "double-click", "right_click", "drag", "scroll",
+    "type", "click_type", "press", "hotkey",
+}
 
 ALLOWED_PARAMS = {
     "observe": {"region", "metadata_only", "path_mode"},
@@ -77,7 +81,7 @@ ALLOWED_PARAMS = {
     "press": {"keys", "app", "verify", "risk", "confirm"},
     "hotkey": {"keys", "app", "verify", "risk", "confirm"},
     "wait": {"seconds"},
-    "batch": {"actions", "deadline_ms", "app", "risk", "confirm"},
+    "batch": {"actions", "deadline_ms", "app", "risk", "confirm", "final_observe"},
     "stop": set(),
     "doctor": set(),
 }
@@ -208,16 +212,15 @@ def confirmation_issue(params: dict, text: str = "") -> Optional[PreflightIssue]
 
 
 def input_state_issue(state: Any) -> Optional[PreflightIssue]:
-    """Fail closed when focused-element/window safety metadata is unavailable.
+    """Require an inspected, non-sensitive focus state before keyboard input.
 
-    None means the element metadata is genuinely unavailable (e.g. Chrome's
-    address bar doesn't expose it to accessibility).  The app-focus check
-    already verified the correct frontmost application, so we allow typing
-    to proceed — but only when state is None (unavailable), not when it is
-    an empty dict (something is wrong).
+    Missing accessibility data is unknown, not evidence that the target is
+    safe. The caller must stop and ask for a new observation or user action.
     """
     if state is None:
-        return None
+        return PreflightIssue(
+            "needs_attention", "input safety state could not be inspected"
+        )
     if not isinstance(state, dict) or not state:
         return PreflightIssue(
             "needs_attention", "input safety state could not be inspected"
@@ -345,6 +348,18 @@ def preflight_command(name: str, params: dict) -> Optional[PreflightIssue]:
         ):
             return PreflightIssue("bad_arg", "wait seconds must be 0-60")
     if name == "batch":
+        if "final_observe" in params:
+            final_observe = params["final_observe"]
+            if not isinstance(final_observe, dict):
+                return PreflightIssue("bad_arg", "final_observe must be an object")
+            unknown_final = set(final_observe) - {"image"}
+            if unknown_final:
+                return PreflightIssue(
+                    "bad_arg",
+                    f"unknown final_observe argument(s): {', '.join(sorted(map(str, unknown_final)))}",
+                )
+            if "image" in final_observe and not isinstance(final_observe["image"], bool):
+                return PreflightIssue("bad_arg", "final_observe.image must be a boolean")
         deadline_ms = params.get("deadline_ms")
         if deadline_ms is not None and (
             isinstance(deadline_ms, bool)
@@ -367,10 +382,7 @@ def preflight_command(name: str, params: dict) -> Optional[PreflightIssue]:
                 "bad_arg",
                 f"unknown timing mode: {mode} (use {', '.join(TIMING_MODES)})",
             )
-    if name in {
-        "move", "click", "double-click", "right_click", "drag", "scroll",
-        "type", "click_type", "press", "hotkey",
-    }:
+    if name in INPUT_COMMANDS:
         text = params.get("text", "") if name in {"type", "click_type"} else ""
         return confirmation_issue(params, text if isinstance(text, str) else "")
     return None
@@ -430,10 +442,11 @@ def preflight_batch(
                 "bad_arg",
                 f"action {i}: batch observe requires metadata_only",
             )
-        if "risk" not in effective and risk is not None:
-            effective["risk"] = risk
-        if "confirm" not in effective and confirm is not None:
-            effective["confirm"] = confirm
+        if op in INPUT_COMMANDS or op == "batch":
+            if "risk" not in effective and risk is not None:
+                effective["risk"] = risk
+            if "confirm" not in effective and confirm is not None:
+                effective["confirm"] = confirm
         action_app = a.get("app")
         if op in ("type", "click_type", "press", "hotkey") \
                 and "app" not in effective and batch_app:

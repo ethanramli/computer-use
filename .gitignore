@@ -9,4 +9,5 @@ __pycache__/
 build/
 dist/
 desktop/_bin/
+target/
 benchmarks/*.json

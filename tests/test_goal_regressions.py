@@ -4,10 +4,13 @@ Public seam: ``Controller.command(name, params)``.  The recording backend
 proves whether any OS input primitive crossed the backend interface.
 """
 
-import pytest
 import inspect
+import json
+
+import pytest
 
 from desktop.controller import Controller
+from desktop.mcp_server import McpServer
 from tests.test_controller import FakeBackend
 
 
@@ -15,6 +18,112 @@ def make_controller():
     backend = FakeBackend()
     controller = Controller(backend=backend, dry_run=False)
     return controller, backend
+
+
+def test_batch_final_observe_image_is_captured_once_after_receipts():
+    controller, backend = make_controller()
+
+    result = controller.command(
+        "batch",
+        {
+            "actions": [{"op": "scroll", "direction": "down", "amount": 1,
+                         "risk": "none"}],
+            "final_observe": {"image": True},
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["last_completed"] == 0
+    assert result["data"]["final_observation"]["ok"] is True
+    assert result["data"]["image_b64"]
+    assert [event[0] for event in backend.events].count("capture") == 1
+    assert backend.events[-1][0] == "capture"
+
+
+def test_mcp_batch_final_observe_attaches_one_image_block():
+    backend = FakeBackend()
+    server = McpServer(backend=backend, dry_run=False)
+
+    result = server._tools_call({
+        "name": "desktop",
+        "arguments": {
+            "command": "batch",
+            "params": {
+                "actions": [{"op": "scroll", "direction": "down", "amount": 1,
+                             "risk": "none"}],
+                "final_observe": {"image": True},
+            },
+        },
+    })
+
+    assert [part["type"] for part in result["content"]] == ["text", "image"]
+    envelope = json.loads(result["content"][0]["text"])
+    assert "image_b64" not in envelope["data"]
+    assert envelope["data"]["final_observation"]["ok"] is True
+    assert [event[0] for event in backend.events].count("capture") == 1
+
+
+def test_batch_final_observe_failure_preserves_action_success():
+    controller, backend = make_controller()
+
+    def fail_capture(*_args):
+        raise RuntimeError("capture unavailable")
+
+    backend.capture_region = fail_capture
+    result = controller.command(
+        "batch",
+        {
+            "actions": [{"op": "scroll", "direction": "down", "amount": 1,
+                         "risk": "none"}],
+            "final_observe": {"image": True},
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["last_completed"] == 0
+    assert result["data"]["final_observation"]["ok"] is False
+    assert "image_b64" not in result["data"]
+
+
+def test_batch_final_observe_runs_after_partial_action_failure():
+    controller, backend = make_controller()
+
+    def fail_scroll(*_args, **_kwargs):
+        raise RuntimeError("injected scroll failure")
+
+    backend.scroll = fail_scroll
+    result = controller.command(
+        "batch",
+        {
+            "actions": [{"op": "scroll", "direction": "down", "amount": 1,
+                         "risk": "none"}],
+            "final_observe": {"image": True},
+        },
+    )
+
+    assert result["ok"] is False
+    assert result["data"]["receipts"][0]["status"] == "failed"
+    assert result["data"]["final_observation"]["ok"] is True
+    assert result["data"]["image_b64"]
+    assert backend.events[-1][0] == "capture"
+
+
+@pytest.mark.parametrize("final_observe", [None, True, {"image": 1}, {"path_mode": True}])
+def test_batch_final_observe_options_are_validated_before_actions(final_observe):
+    controller, backend = make_controller()
+
+    result = controller.command(
+        "batch",
+        {
+            "actions": [{"op": "scroll", "direction": "down", "amount": 1,
+                         "risk": "none"}],
+            "final_observe": final_observe,
+        },
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "bad_arg"
+    assert backend.events == []
 
 
 def test_batch_invalid_canonical_double_click_sends_zero_events():
@@ -33,6 +142,26 @@ def test_batch_invalid_canonical_double_click_sends_zero_events():
     assert result["ok"] is False
     assert result["error"]["code"] == "bad_arg"
     assert backend.events == []
+
+
+def test_batch_level_risk_applies_only_to_input_actions():
+    controller, backend = make_controller()
+
+    result = controller.command(
+        "batch",
+        {
+            "risk": "none",
+            "confirm": True,
+            "actions": [
+                {"op": "wait", "seconds": 0},
+                {"op": "scroll", "direction": "down", "amount": 1},
+            ],
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["last_completed"] == 1
+    assert [event[0] for event in backend.events] == ["move", "scroll"]
 
 
 def test_batch_later_unconfirmed_consequential_text_sends_zero_events():
@@ -329,6 +458,39 @@ def test_secure_focused_element_stops_keyboard_input():
         "title": "Password",
     }
 
+    result = controller.command(
+        "type",
+        {"text": "hello", "app": "Finder", "risk": "none"},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "needs_attention"
+    assert backend.events == []
+
+
+def test_unknown_focused_element_stops_keyboard_input():
+    controller, backend = make_controller()
+    backend.focused_element_state = {}
+
+    result = controller.command(
+        "type",
+        {"text": "hello", "app": "Finder", "risk": "none"},
+    )
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "needs_attention"
+    assert backend.events == []
+
+
+def test_unavailable_focused_element_capability_stops_keyboard_input():
+    from desktop.platforms.base import CapabilityError
+
+    controller, backend = make_controller()
+
+    def unavailable():
+        raise CapabilityError("focused_element", "inspection is unavailable")
+
+    backend.focused_element = unavailable
     result = controller.command(
         "type",
         {"text": "hello", "app": "Finder", "risk": "none"},
