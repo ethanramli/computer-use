@@ -1,9 +1,9 @@
 # Batch final observation
 
-Status: implemented and verified in the Python controller and MCP adapter. Rust
-validates the same request and emits a terminal observation descriptor; dry-run
-returns metadata, while live screenshot capture and image delivery remain
-unsupported.
+Status: implemented and verified in the Python and Rust controllers and MCP
+adapters. Dry-run returns metadata. Live macOS sessions capture at most one
+final image and attach it directly to the same MCP response as the receipts.
+Other platforms continue to report their native capture capability honestly.
 
 ## Goal
 

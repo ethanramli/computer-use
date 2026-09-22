@@ -8,4 +8,4 @@ CLI verbs, JSON envelope shapes, exit codes, and command contract decisions.
 - `verb-table.md` — OS-level verb table with full argument signatures.
 - `execution-codes.md` — Execution codes: dry-run default, `--execute`, and exit code table.
 - `launch-verb.md` — Launch verb: foreground activation with focus verification.
-- `observation-batching.md` — Planned one-image final observation attached to the same MCP response as batch receipts; not implemented yet.
+- `observation-batching.md` — One optional final image attached to the same MCP response as batch receipts.
