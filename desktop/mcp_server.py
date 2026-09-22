@@ -16,6 +16,7 @@ from .platforms.base import Backend
 
 PROTOCOL_VERSION = "2026-07-28"
 MAX_MESSAGE_BYTES = 4 * 1024 * 1024  # 4 MiB input bound; backpressure by rejection
+MAX_JSON_DEPTH = 1000
 
 TOOLS: List[Dict[str, Any]] = [
     {
@@ -88,6 +89,37 @@ def _loads(line: str):
     return json.loads(line, parse_constant=_reject_non_json_constant)
 
 
+def _exceeds_json_depth(line: str, limit: int = MAX_JSON_DEPTH) -> bool:
+    """Return whether JSON containers exceed the protocol's parser bound.
+
+    Python's JSON recursion behavior varies between interpreter versions. Scan
+    only structural characters outside strings so deeply nested requests get
+    the same JSON-RPC parse error everywhere without attempting to deserialize
+    them first.
+    """
+    depth = 0
+    escaped = False
+    in_string = False
+    for character in line:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character in "[{":
+            depth += 1
+            if depth > limit:
+                return True
+        elif character in "]}":
+            depth = max(0, depth - 1)
+    return False
+
+
 class McpServer:
     """One instance per process. handle_line is the transport seam; run()
     loops over stdin until EOF."""
@@ -109,6 +141,8 @@ class McpServer:
             return self._error(None, -32700, "parse error")
         if message_bytes > MAX_MESSAGE_BYTES:
             return self._error(None, -32700, "request too large")
+        if _exceeds_json_depth(line):
+            return self._error(None, -32700, "parse error")
         try:
             req = _loads(line)
         except (json.JSONDecodeError, ValueError, RecursionError):
