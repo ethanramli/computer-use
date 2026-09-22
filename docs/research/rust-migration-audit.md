@@ -1,6 +1,6 @@
 # Rust migration audit
 
-Updated: 2026-09-22. This is a live audit of the untracked `plan.md` against
+Updated: 2026-09-22. This is a live audit of the imported `plan.md` against
 the repository instructions, `README.md`, the Rust research, and the current
 worktree. The plan remains proposed and has not been edited.
 
@@ -8,9 +8,10 @@ worktree. The plan remains proposed and has not been edited.
 
 - Repository: `computer-automation`; baseline commit: `c089d001c3c0eec267948d3dcb4587bfa59290e5`.
 - Existing user changes were present in `AGENTS.md`, `README.md`,
-  `docs/protocol/README.md`, and `docs/research/README.md`; untracked user
+  `docs/protocol/README.md`, and `docs/research/README.md`; imported user
   documents included `plan.md`, `docs/protocol/observation-batching.md`, and
-  `docs/research/rust-cross-platform.md`. They were preserved.
+  `docs/research/rust-cross-platform.md`. They were preserved and are now
+  tracked with the migration.
 - No Rust workspace or Rust source existed at the start of this migration.
 - Baseline Python suite: `python3 -m pytest -q` — 301 passed before the
   migration safety correction.
