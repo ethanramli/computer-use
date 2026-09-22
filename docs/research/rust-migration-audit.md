@@ -84,6 +84,11 @@ worktree. The plan remains proposed and has not been edited.
   C syntax checks, the Python wheel smoke, the side-by-side Rust release
   installer, live read-only macOS capture, live MCP image delivery, and private
   path cleanup all pass on this host.
+- GitHub Actions Ubuntu regression run `35724606118` passes the Python suite,
+  Python compilation, Rust formatting, Clippy, and the locked Rust workspace
+  tests. Its predecessor exposed a Python-version difference in deeply nested
+  JSON parsing; the MCP server now applies an explicit structural depth bound
+  before deserialization and returns the documented parse error consistently.
 - `install-rust-preview` packages optimized Rust binaries and `cghelper` under
   separate `desktop-rust` and `computer-mcp-rust` names. The regular Python
   commands remain the default while external non-macOS host evidence is
